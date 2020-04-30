@@ -1,17 +1,19 @@
 # Rock Paper Scissors Lizard Spock Online
 
 Backend based on [aws example](https://github.com/aws-samples/simple-websockets-chat-app)
-This [medium post](https://medium.com/@techinscribed/authenticated-serverless-websockets-using-api-gateway-golang-lambda-6e661216638) was also incredibly helpful with a worked example of APIGW websocket handling in go
+This [medium post](https://medium.com/@techinscribed/authenticated-serverless-websockets-using-api-gateway-golang-lambda-6e661216638) was also incredibly helpful with a worked example of APIGW websocket handling in go. 
+
+The same author's frontend post is probably worth looking at too. [RxJS and Redux Observables](https://techinscribed.com/websocket-connection-reconnection-rxjs-redux-observable/?utm_source=medium&utm_medium=Referral&utm_campaign=guest_blogging)
 
 ## TODO
 
-* get this into git
-* get go code echoing back using the send API
 * javascript hello world (send a message from node)
 * FE hello world (send a message on click)
 * fix dynamo part of the template (schema'y bits)
 * figure out dynamo real schema
 * do integration test
+* See if lambda could be 128MB instead
+* Add google tracker to app
 
 ## Rules
 
@@ -49,17 +51,41 @@ From [some page online](https://dodona.ugent.be/en/exercises/1647887074/)
 
 ## State Payloads
 
-* StartGame
-	{ action: StartGame } --> {gameid: id, round: 1}
-* UpdateGame
-	{ action: UpdateGame, gameid, name, selected move {rock, paper, scissors, lizard, spock} }
-* GameStatus
-	{ gameid, moves {<name>: <move>}, winner: <player>, score {player: score}, round: <round> }
+On connect, get a game state
 
+Game state:
+{ gameid, round, players: {you: {score: ..., played: false}, other: {score: ..., played: true, status: connected}}, lastwinner: you }
 
 ## Dynamo Backend
 
-Access patterns
+All entries should have 7 day TTL
+
+Primary Key: gameid
+Primary Key: session id
+
+Access patterns:
+
+Connection:
+
+	no-op. Don't know at connect time if user has a game to join or not
+
+Starting Game
+	Starting a game:
+	- given a session id, fetch a gameid (create a game record)
+
+Joining Game
+	Joining a game:
+	- given a game id, where session not in the game, update game with session
+
+Disconnection (or on send-to failure):
+
+	- given a session id, find a game record, send players updated state
+
+Play:
+
+	- given (gameid,session) update (play, round) and also update game state
+		- if other player has played, pick a winner and increment round
+		- otherwise, update game state and send out state update
 
 ## Testing
 
@@ -85,15 +111,3 @@ To send a message to a client, you can use:
 POST https://{api-id}.execute-api.us-east-1.amazonaws.com/{stage}/@connections/{connection_id}
 
 The information you need for calling this is in the context:
-
-```
-	exports.handler = function(event, context, callback) {
-	var domain = event.requestContext.domainName;
-	var stage = event.requestContext.stage;
-	var connectionId = event.requestContext.connectionId;
-	var callbackUrl = util.format(util.format('https://%s/%s/@connections/%s', domain, stage, connectionId));
-	// Do a SigV4 and then make the call
-	}
-```
-
-
