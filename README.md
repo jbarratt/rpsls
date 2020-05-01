@@ -14,6 +14,10 @@ The same author's frontend post is probably worth looking at too. [RxJS and Redu
 * do integration test
 * See if lambda could be 128MB instead
 * Add google tracker to app
+* Add TTLs to dynamo items (https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/howitworks-ttl.html)
+	* enable it on the table
+	* Identify a column
+	* add epoch timestamps to expirable items
 
 ## Rules
 
@@ -60,8 +64,52 @@ Game state:
 
 All entries should have 7 day TTL
 
-Primary Key: gameid
-Primary Key: session id
+Partition ID: gameid
+Partition ID: session id
+
+Partition Key / Sort Key
+
+CONN#connectionid: get/put/deleteItem
+GAME#<gameid>
+ GAME#<gameid> (game state) reject update if item has chaanged
+
+Argument: make PK and SK both structured so they can be inverted if needed
+    
+- Add a type field to each item
+- Add data to the items for the values you also have in the PK/SK ("indexing values")
+- build the idealized structs for the game layer to work with. Then write the dynamo code to implement that.
+
+gameid, round, plays (this round), p1play, p2play, p1wins, p2wins, p1conn, p2conn
+
+Global cache of
+ - connid -> {gameid, player number}
+
+on play:
+  - do I know which player I am? cool
+  	- else, fetch game state and figure it out based on conn id. Cache this data.
+		- if I'm not one of the connection ids
+			- if one is blank, then that's me, add my connection id there
+			- add a CONN#connectionid -> gameid entry
+  - update GAME#$gameid, plays:1, p1play: move UNLESS plays>0
+  	- else, fetch game state and 
+		- determine the winner
+			- inc the winner's score
+			- unset the plays
+			- bump the round id
+			- set plays to zero
+			- store that row back in DB
+		- notify all players:
+			- next round id
+			- did they win or lose
+			- their and other player's play
+			- current scores
+		- on notification failure
+			- unset that connection id from the game
+			- remove the connectionid -> gameid entry
+
+Preventing race conditions at write idea:
+Game / round / responses count -- fail the write if the responses is != 0, which means you need to do the math
+
 
 Access patterns:
 
@@ -111,3 +159,17 @@ To send a message to a client, you can use:
 POST https://{api-id}.execute-api.us-east-1.amazonaws.com/{stage}/@connections/{connection_id}
 
 The information you need for calling this is in the context:
+
+## Frontend Notes
+
+	const url = 'wss://myserver.com/something'
+	const connection = new WebSocket(url)
+	connection.onmessage = e => {
+	  console.log(e.data)
+	}
+	connection.onerror = error => {
+	  console.log(`WebSocket error: ${error}`)
+	}
+	connection.onopen = () => {
+	  connection.send('hey')
+	}

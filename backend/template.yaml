@@ -98,16 +98,20 @@ Resources:
       Description: Prod Stage
       DeploymentId: !Ref Deployment
       ApiId: !Ref RPSLPWebSocket
-  ConnectionsTable: #TODO FIX
+  ConnectionsTable: 
     Type: AWS::DynamoDB::Table
     Properties:
       BillingMode: "PAY_PER_REQUEST"
       AttributeDefinitions:
-      - AttributeName: "connectionId"
+      - AttributeName: "PK"
+        AttributeType: "S"
+      - AttributeName: "SK"
         AttributeType: "S"
       KeySchema:
-      - AttributeName: "connectionId"
+      - AttributeName: "PK"
         KeyType: "HASH"
+      - AttributeName: "SK"
+        KeyType: "RANGE"
       SSESpecification:
         SSEEnabled: True
       TableName: !Ref TableName
