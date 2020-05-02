@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -14,9 +15,22 @@ import (
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
 )
 
+// Package scoped variables aren't great but
+// for lambda, it's probably not too terrible
+var (
+	ddbclient   *dynamodb.DynamoDB
+	ddbtable    string
+	apigwclient *apigatewaymanagementapi.ApiGatewayManagementApi
+)
+
 func Connect(e events.APIGatewayWebsocketProxyRequest) (interface{}, error) {
 	fmt.Printf("$connect: body: '%s' connectionId: '%s'\n", e.Body, e.RequestContext.ConnectionID)
-	StoreConnection(e.RequestContext.ConnectionID, "temp")
+	gameID, err := GetGame(e.RequestContext.ConnectionID)
+	if err == nil {
+		// TODO: send game state to connection
+		fmt.Sprintf("need to send the state of game %s to client\n", gameID)
+	}
+	//StoreConnection(e.RequestContext.ConnectionID, "temp")
 	return events.APIGatewayProxyResponse{
 		StatusCode: 200,
 	}, nil
@@ -24,31 +38,39 @@ func Connect(e events.APIGatewayWebsocketProxyRequest) (interface{}, error) {
 
 func Disconnect(e events.APIGatewayWebsocketProxyRequest) (interface{}, error) {
 	fmt.Printf("$disconnect: body: '%s' connectionId: '%s'\n", e.Body, e.RequestContext.ConnectionID)
+	// TODO
+	// look up the game if there is one
+	// remove the session from it
+	// notify the other player
+	// remove the connection/game link
+	RemoveConnection(e.RequestContext.ConnectionID)
 	return events.APIGatewayProxyResponse{
 		StatusCode: 200,
 	}, nil
 }
 
+func SendMessage(message []byte, connectionID string) error {
+	input := &apigatewaymanagementapi.PostToConnectionInput{
+		ConnectionId: aws.String(connectionID),
+		Data:         message,
+	}
+
+	_, err := apigwclient.PostToConnection(input)
+	if err != nil {
+		log.Println("Error Sending Message", err.Error())
+		return err
+	}
+	return nil
+}
+
 func Default(e events.APIGatewayWebsocketProxyRequest) (interface{}, error) {
 	fmt.Printf("$defaut: body: '%s' connectionId: '%s'\n", e.Body, e.RequestContext.ConnectionID)
 
-	baseURL := fmt.Sprintf("https://%s/%s/", e.RequestContext.DomainName, e.RequestContext.Stage)
-
 	// send a message back to the connectionID
 	// could return it inline but this is an example of sending to others
-	sess := GetSession()
+	SendMessage([]byte(e.Body), e.RequestContext.ConnectionID)
 
-	input := &apigatewaymanagementapi.PostToConnectionInput{
-		ConnectionId: &e.RequestContext.ConnectionID,
-		Data:         []byte(e.Body),
-	}
-
-	apigateway := apigatewaymanagementapi.New(sess, aws.NewConfig().WithEndpoint(baseURL))
-
-	_, err := apigateway.PostToConnection(input)
-	if err != nil {
-		log.Println("Error Posting", err.Error())
-	}
+	// TODO handle the messages from clients
 
 	return events.APIGatewayProxyResponse{
 		StatusCode: 200,
@@ -67,6 +89,16 @@ func GetSession() *session.Session {
 
 func Handler(e events.APIGatewayWebsocketProxyRequest) (interface{}, error) {
 	fmt.Printf("Entered handler\n")
+
+	// Set up the AWS connections. TODO refactor
+	sess := GetSession()
+	baseURL := fmt.Sprintf("https://%s/%s/", e.RequestContext.DomainName, e.RequestContext.Stage)
+	apigwclient = apigatewaymanagementapi.New(sess, aws.NewConfig().WithEndpoint(baseURL))
+
+	// TODO refactor around a dynamo implementation of a store interface
+	ddbtable = os.Getenv("TABLE_NAME")
+	ddbclient = dynamodb.New(GetSession())
+
 	switch e.RequestContext.RouteKey {
 	case "$connect":
 		return Connect(e)
@@ -108,9 +140,6 @@ type ConnectionGame struct {
 // StoreConnection will store the game ID with the connection ID
 func StoreConnection(connectionID, gameID string) error {
 
-	sess := GetSession()
-	svc := dynamodb.New(sess)
-
 	item := ConnectionGame{
 		PK:     fmt.Sprintf("CONN#%s", connectionID),
 		SK:     fmt.Sprintf("CONN#%s", connectionID),
@@ -126,14 +155,12 @@ func StoreConnection(connectionID, gameID string) error {
 		return err
 	}
 
-	table := os.Getenv("TABLE_NAME")
-
 	input := &dynamodb.PutItemInput{
 		Item:      av,
-		TableName: aws.String(table),
+		TableName: aws.String(ddbtable),
 	}
 
-	_, err = svc.PutItem(input)
+	_, err = ddbclient.PutItem(input)
 	if err != nil {
 		fmt.Println("Error calling PutItem")
 		fmt.Println(err.Error())
@@ -143,37 +170,70 @@ func StoreConnection(connectionID, gameID string) error {
 }
 
 // GetGame will return a GameID given if connectID, if one exists.
-// func GetGame(connectionID string) (string, error) {
-// }
+func GetGame(connectionID string) (string, error) {
 
-/*
+	input := &dynamodb.GetItemInput{
+		TableName: aws.String(ddbtable),
+		Key: map[string]*dynamodb.AttributeValue{
+			"PK": {
+				S: aws.String(fmt.Sprintf("CONN#%s", connectionID)),
+			},
+			"SK": {
+				S: aws.String(fmt.Sprintf("CONN#%s", connectionID)),
+			},
+		},
+	}
+	result, err := ddbclient.GetItem(input)
+	if err != nil {
+		fmt.Println("Error fetching game from connection")
+		fmt.Println(err.Error())
+		return "", err
+	}
+	item := ConnectionGame{}
+	err = dynamodbattribute.UnmarshalMap(result.Item, &item)
+	if err != nil {
+		fmt.Println("Error reading game record")
+		return "", nil
+	}
+	if item.GameID != "" {
+		return item.GameID, nil
+	}
+	return "", errors.New("connection had no game set")
+}
 
-Global cache of
-- connid -> {gameid, player number}
+// RemoveConnection removes a connection (i.e. on disconnect)
+func RemoveConnection(connectionID string) error {
+	input := &dynamodb.DeleteItemInput{
+		TableName:    aws.String(ddbtable),
+		ReturnValues: aws.String("ALL_OLD"),
+		Key: map[string]*dynamodb.AttributeValue{
+			"PK": {
+				S: aws.String(fmt.Sprintf("CONN#%s", connectionID)),
+			},
+			"SK": {
+				S: aws.String(fmt.Sprintf("CONN#%s", connectionID)),
+			},
+		},
+	}
 
-on play:
-- do I know which player I am? cool
-- else, fetch game state and figure it out based on conn id. Cache this data.
-- if I'm not one of the connection ids
-- if one is blank, then that's me, add my connection id there
-- add a CONN#connectionid -> gameid entry
-- update GAME#$gameid, plays:1, p1play: move UNLESS plays>0
-- else, fetch game state and
-- determine the winner
-- inc the winner's score
-- unset the plays
-- bump the round id
-- set plays to zero
-- store that row back in DB
-- notify all players:
-- next round id
-- did they win or lose
-- their and other player's play
-- current scores
-- on notification failure
-- unset that connection id from the game
-- remove the connectionid -> gameid entry
-*/
+	result, err := ddbclient.DeleteItem(input)
+	if err != nil {
+		fmt.Println("Error deleting connection")
+		fmt.Println(err.Error())
+		return err
+	}
+	item := ConnectionGame{}
+	err = dynamodbattribute.UnmarshalMap(result.Attributes, &item)
+	if err != nil {
+		fmt.Println("Error reading game record, not unlinking from game")
+		return nil
+	}
+	if item.GameID != "" {
+		fmt.Println("TODO call RemoveConnectionFromGame")
+		//RemoveConnectionFromGame(connectionID, item.GameID)
+	}
+	return nil
+}
 
 func main() {
 	lambda.Start(Handler)
