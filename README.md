@@ -7,10 +7,10 @@ The same author's frontend post is probably worth looking at too. [RxJS and Redu
 
 ## TODO
 
+* create Player ID concept for the frontend to handle the idle disconnects meaning who knows who is who
+	connection -> player{gameid, uid}
 * javascript hello world (send a message from node)
 * FE hello world (send a message on click)
-* fix dynamo part of the template (schema'y bits)
-* figure out dynamo real schema
 * do integration test
 * See if lambda could be 128MB instead
 * Add google tracker to app
@@ -106,10 +106,6 @@ on play:
 		- on notification failure
 			- unset that connection id from the game
 			- remove the connectionid -> gameid entry
-
-Preventing race conditions at write idea:
-Game / round / responses count -- fail the write if the responses is != 0, which means you need to do the math
-
 
 Access patterns:
 

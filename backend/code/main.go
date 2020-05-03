@@ -112,7 +112,7 @@ func Default(e events.APIGatewayWebsocketProxyRequest) (interface{}, error) {
 			}, nil
 		}
 	default:
-		fmt.Printf("Unknown action %s", message.Action)
+		fmt.Printf("Unknown action %s\n", message.Action)
 		return events.APIGatewayProxyResponse{
 			StatusCode: 400,
 		}, nil
@@ -125,10 +125,13 @@ func Default(e events.APIGatewayWebsocketProxyRequest) (interface{}, error) {
 
 // GetPlayer returns a memoized player ID from connection and game
 func GetOrAssignPlayer(connectionID, gameID string) (int, error) {
-	number, ok := playerNum[connectionID]
-	if ok {
-		return number, nil
-	}
+	// TODO need to make sure to clear this out on disconnect or connect before it can be trusted
+	/*
+		number, ok := playerNum[connectionID]
+		if ok {
+			return number, nil
+		}
+	*/
 	// Otherwise, that means we need to load the game and figure out which player this is
 	game, err := LoadGame(gameID)
 	if err != nil {
@@ -140,18 +143,27 @@ func GetOrAssignPlayer(connectionID, gameID string) (int, error) {
 	} else if game.P2ConnID == connectionID {
 		player = 2
 	}
+	if player != 0 {
+		playerNum[connectionID] = player
+		return player, nil
+	}
+
 	// otherwise, player needs to be assigned
-	if game.P1ConnID != "" {
+	if len(game.P1ConnID) < 2 {
 		player = 1
 		err := UpdateGamePlayer(connectionID, gameID, player)
 		if err != nil {
+			fmt.Printf("Error while assigning player 1 to game\n")
+			fmt.Println(err.Error())
 			return 0, err
 		}
 	}
-	if game.P2ConnID != "" {
+	if len(game.P2ConnID) < 2 {
 		player = 2
 		err := UpdateGamePlayer(connectionID, gameID, player)
 		if err != nil {
+			fmt.Printf("Error while assigning player 2 to game\n")
+			fmt.Println(err.Error())
 			return 0, err
 		}
 	}
@@ -159,12 +171,14 @@ func GetOrAssignPlayer(connectionID, gameID string) (int, error) {
 		playerNum[connectionID] = player
 		return player, nil
 	}
+	fmt.Printf("unable to assign a player, no slots available\n")
 	return 0, errors.New("No player slots available")
 }
 
 // UpdateGamePlayer either assigns or unassigns a player
 // Set connectionID to the empty string to mark the user as disconnected
 func UpdateGamePlayer(connectionID, gameID string, player int) error {
+	fmt.Printf("Assigning player %d from connection %s to game %s\n", player, connectionID, gameID)
 	input := &dynamodb.UpdateItemInput{
 		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
 			":conn": {
@@ -209,20 +223,31 @@ func Play(connectionID string, message PlayerMessage) error {
 	// Figure out which player we are (1 or 2)
 	player, err := GetOrAssignPlayer(connectionID, message.GameID)
 	if err != nil {
+		fmt.Printf("error identifying player %s\n", connectionID)
 		return err
 	}
+	fmt.Printf("Identified player at %s as %d\n", connectionID, player)
 
-	// Update with plays = 1 and p=play = message.Play unless plays = 0
-	// 	-- with a fetch the record
-
+	// Attempt to update. Only do so if this player is the first to get in.
+	// Update with plays = 1 and p=play = message.Play unless plays != 0
 	input := &dynamodb.UpdateItemInput{
 		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
 			":play": {
 				S: aws.String(message.Play),
 			},
+			":count": {
+				N: aws.String("1"),
+			},
+			":zero": {
+				N: aws.String("0"),
+			},
+			":round": {
+				N: aws.String(fmt.Sprintf("%d", message.Round)),
+			},
 		},
 		ExpressionAttributeNames: map[string]*string{
 			"#pxplay": aws.String(fmt.Sprintf("P%dPlay", player)),
+			"#round":  aws.String("Round"),
 		},
 		TableName: aws.String(ddbtable),
 		Key: map[string]*dynamodb.AttributeValue{
@@ -233,9 +258,8 @@ func Play(connectionID string, message PlayerMessage) error {
 				S: aws.String(fmt.Sprintf("GAME#%s", message.GameID)),
 			},
 		},
-		ReturnValues:        aws.String("ALL_OLD"),
-		ConditionExpression: aws.String(fmt.Sprintf("Plays = 0")),
-		UpdateExpression:    aws.String(fmt.Sprintf("set Plays = 1, #pxplay = :play")),
+		ConditionExpression: aws.String(fmt.Sprintf("Plays = :zero AND #round = :round")),
+		UpdateExpression:    aws.String(fmt.Sprintf("SET Plays = :count, #pxplay = :play")),
 	}
 
 	result, err := ddbclient.UpdateItem(input)
@@ -245,23 +269,58 @@ func Play(connectionID string, message PlayerMessage) error {
 	}
 	if !(strings.Contains(err.Error(), "ConditionalCheckFailed")) {
 		// some other kind of error
+		fmt.Printf("got an error making a dynamo play\n")
+		fmt.Println(err.Error())
 		return err
 	}
 
 	// Conditional Check Failed, meaning the other player has already gone.
-	item := GameItem{}
-	err = dynamodbattribute.UnmarshalMap(result.Attributes, &item)
+	// Sadly this means Dynamo will not return the unmodified values to us, so we have to fetch them.
+	item, err := LoadGame(message.GameID)
+	if err != nil {
+		fmt.Println("Error fetching current state of game")
+		fmt.Println(err.Error())
+		return err
+	}
+	// update the record with this player's move for judging
+	if player == 1 {
+		item.P1Play = message.Play
+	} else if player == 2 {
+		item.P2Play = message.Play
+	}
+
+	// TODO how did I get here when only the first player went
+	fmt.Printf("Game data to be used for judging: %+v\n", item)
 
 	winningPlayer, how := WinningPlayer(item)
 
+	pxScore := "P1Score"
 	scoreInc := "SET "
 	if winningPlayer != 0 {
-		scoreInc = fmt.Sprintf("P%dScore = P%dScore + 1, ", winningPlayer, winningPlayer)
+		scoreInc = scoreInc + "#pxscore = #pxscore + :one, "
+		pxScore = fmt.Sprintf("P%dScore", winningPlayer)
+	} else {
+		scoreInc = scoreInc + "#pxscore = #pxscore + :zero, "
 	}
-	updateExpr := scoreInc + "Round = Round + 1, P1Play = \"\", P2Play = \"\", Plays = 0"
+	updateExpr := scoreInc + "Round = Round + :one, Plays = :zero, #pxplay = :play"
 
 	input = &dynamodb.UpdateItemInput{
 		TableName: aws.String(ddbtable),
+		ExpressionAttributeNames: map[string]*string{
+			"#pxscore": aws.String(pxScore),
+			"#pxplay":  aws.String(fmt.Sprintf("P%dPlay", player)),
+		},
+		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
+			":one": {
+				N: aws.String("1"),
+			},
+			":zero": {
+				N: aws.String("0"),
+			},
+			":play": {
+				S: aws.String(message.Play),
+			},
+		},
 		Key: map[string]*dynamodb.AttributeValue{
 			"PK": {
 				S: aws.String(fmt.Sprintf("GAME#%s", message.GameID)),
@@ -276,13 +335,15 @@ func Play(connectionID string, message PlayerMessage) error {
 
 	result, err = ddbclient.UpdateItem(input)
 	if err != nil {
-		fmt.Println("unable to set next round of the game")
+		fmt.Println("call error: unable to set next round of the game")
+		fmt.Printf(err.Error())
 		return err
 	}
 
 	err = dynamodbattribute.UnmarshalMap(result.Attributes, &item)
 	if err != nil {
-		fmt.Println("unable to set next round of the game")
+		fmt.Println("unmarshal error: unable to set next round of the game")
+		fmt.Printf(err.Error())
 		return err
 	}
 
@@ -454,6 +515,7 @@ type GameState struct {
 }
 
 // TODO use PlayerSession in the places where normally game is passed around
+// Alternatively GameContext which has Player info (ID, etc) as well as the game info we know about
 type PlayerSession struct {
 	ConnectionID string
 	GameID       string
@@ -612,7 +674,6 @@ func NewGame(connectionID string) error {
 		fmt.Println(err.Error())
 		return err
 	}
-	// TODO store the link in the db
 	StoreConnection(connectionID, gameID)
 	return nil
 }
@@ -736,13 +797,17 @@ func WinningPlayer(game GameItem) (int, string) {
 // also returns the verb needed <first> crushes <second>
 // In the case of a tie, returns "ties" as the verb
 func Beats(first, second string) (bool, string) {
+	fmt.Printf("Checking to see if %s beats %s\n", first, second)
 	if first == second {
+		fmt.Println("they are equal so they tie")
 		return false, "ties"
 	}
 	how, ok := beats[first+":"+second]
 	if ok {
+		fmt.Println("It does! returning how")
 		return true, how
 	}
+	fmt.Println("It does not beat it.")
 	return false, ""
 }
 
