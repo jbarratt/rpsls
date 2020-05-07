@@ -366,20 +366,22 @@ func NotifyPlayers(game GameItem, winningPlayer int, how string) error {
 
 	states := make([]GameState, 2)
 	states[0] = GameState{
-		Round:      game.Round,
-		GameID:     game.GameID,
-		YourScore:  game.P1Score,
-		TheirScore: game.P2Score,
-		YourPlay:   game.P1Play,
-		TheirPlay:  game.P2Play,
+		Round:             game.Round,
+		GameID:            game.GameID,
+		YourScore:         game.P1Score,
+		TheirScore:        game.P2Score,
+		YourPlay:          game.P1Play,
+		TheirPlay:         game.P2Play,
+		OpponentConnected: true,
 	}
 	states[1] = GameState{
-		Round:      game.Round,
-		GameID:     game.GameID,
-		YourScore:  game.P2Score,
-		TheirScore: game.P1Score,
-		YourPlay:   game.P1Play,
-		TheirPlay:  game.P2Play,
+		Round:             game.Round,
+		GameID:            game.GameID,
+		YourScore:         game.P2Score,
+		TheirScore:        game.P1Score,
+		YourPlay:          game.P1Play,
+		TheirPlay:         game.P2Play,
+		OpponentConnected: true,
 	}
 
 	switch winningPlayer {
