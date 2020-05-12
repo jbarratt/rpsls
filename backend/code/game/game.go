@@ -14,7 +14,7 @@ var (
 
 const (
 	NUM_PLAYERS   = 2
-	GAMEID_LENGTH = 8
+	GAMEID_LENGTH = 5
 )
 
 // Player stores relevant information about a current player's state
@@ -172,7 +172,7 @@ func ValidPlay(play string) bool {
 
 // GenerateRandomString returns a random string of length N
 func GenerateRandomString(n int) (string, error) {
-	letters := "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+	letters := "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	data, err := GenerateRandomBytes(n)
 	if err != nil {
 		return "NONRANDOM", err

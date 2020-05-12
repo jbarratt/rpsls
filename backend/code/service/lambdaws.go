@@ -193,6 +193,10 @@ func (s *LambdaSvc) SendGameState(gc *game.GameContext) error {
 	if you == 0 {
 		other = 1
 	}
+	if you == -1 {
+		fmt.Println("player was not assigned to the game")
+		return errors.New("player was not a member of the game")
+	}
 
 	state := GameState{
 		Round:      gc.Game.Round,
