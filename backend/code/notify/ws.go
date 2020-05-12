@@ -3,14 +3,18 @@ package notify
 import (
 	"fmt"
 	"log"
-)
 
-type Notifier interface {
-	Send(destination string, body []byte) error
-}
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/apigatewaymanagementapi"
+)
 
 type APIGWNotifier struct {
 	c *apigatewaymanagementapi.ApiGatewayManagementApi
+}
+
+type Notifier interface {
+	Send(string, []byte) error
 }
 
 func NewAPIGWNotifier(domain, stage string, sess *session.Session) *APIGWNotifier {
@@ -25,7 +29,7 @@ func NewAPIGWNotifier(domain, stage string, sess *session.Session) *APIGWNotifie
 func (n *APIGWNotifier) Send(destination string, body []byte) error {
 	input := &apigatewaymanagementapi.PostToConnectionInput{
 		ConnectionId: aws.String(destination),
-		Data:         message,
+		Data:         body,
 	}
 
 	_, err := n.c.PostToConnection(input)

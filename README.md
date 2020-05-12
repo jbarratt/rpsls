@@ -7,8 +7,6 @@ The same author's frontend post is probably worth looking at too. [RxJS and Redu
 
 ## TODO
 
-* create Player ID concept for the frontend to handle the idle disconnects meaning who knows who is who
-	connection -> player{gameid, uid}
 * javascript hello world (send a message from node)
 * FE hello world (send a message on click)
 * do integration test
@@ -52,84 +50,6 @@ From [some page online](https://dodona.ugent.be/en/exercises/1647887074/)
 * GameID should be a 6 character alphanumeric string
 * Generated client side and used on the backend for coordination
 
-
-## State Payloads
-
-On connect, get a game state
-
-Game state:
-{ gameid, round, players: {you: {score: ..., played: false}, other: {score: ..., played: true, status: connected}}, lastwinner: you }
-
-## Dynamo Backend
-
-All entries should have 7 day TTL
-
-Partition ID: gameid
-Partition ID: session id
-
-Partition Key / Sort Key
-
-CONN#connectionid: get/put/deleteItem
-GAME#<gameid>
- GAME#<gameid> (game state) reject update if item has chaanged
-
-Argument: make PK and SK both structured so they can be inverted if needed
-    
-- Add a type field to each item
-- Add data to the items for the values you also have in the PK/SK ("indexing values")
-- build the idealized structs for the game layer to work with. Then write the dynamo code to implement that.
-
-gameid, round, plays (this round), p1play, p2play, p1wins, p2wins, p1conn, p2conn
-
-Global cache of
- - connid -> {gameid, player number}
-
-on play:
-  - do I know which player I am? cool
-  	- else, fetch game state and figure it out based on conn id. Cache this data.
-		- if I'm not one of the connection ids
-			- if one is blank, then that's me, add my connection id there
-			- add a CONN#connectionid -> gameid entry
-  - update GAME#$gameid, plays:1, p1play: move UNLESS plays>0
-  	- else, fetch game state and 
-		- determine the winner
-			- inc the winner's score
-			- unset the plays
-			- bump the round id
-			- set plays to zero
-			- store that row back in DB
-		- notify all players:
-			- next round id
-			- did they win or lose
-			- their and other player's play
-			- current scores
-		- on notification failure
-			- unset that connection id from the game
-			- remove the connectionid -> gameid entry
-
-Access patterns:
-
-Connection:
-
-	no-op. Don't know at connect time if user has a game to join or not
-
-Starting Game
-	Starting a game:
-	- given a session id, fetch a gameid (create a game record)
-
-Joining Game
-	Joining a game:
-	- given a game id, where session not in the game, update game with session
-
-Disconnection (or on send-to failure):
-
-	- given a session id, find a game record, send players updated state
-
-Play:
-
-	- given (gameid,session) update (play, round) and also update game state
-		- if other player has played, pick a winner and increment round
-		- otherwise, update game state and send out state update
 
 ## Testing
 

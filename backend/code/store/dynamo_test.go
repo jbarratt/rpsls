@@ -43,7 +43,7 @@ func TestGameStore(t *testing.T) {
 		t.Fatalf("unable to store player two: %s", err)
 	}
 
-	// simulate first player reconnecting
+	// simulate second player reconnecting
 	g2, err := s.Load(g.ID)
 	if err != nil {
 		t.Fatalf("unable to load game from ID: %s", err)
