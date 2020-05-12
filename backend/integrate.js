@@ -4,8 +4,6 @@ const url = 'wss://foamngcalc.execute-api.us-west-2.amazonaws.com/Prod'
 var gameId = ""
 var roundId = 0
 
-
-
 const p1 = new WebSocket(url)
 p1.onmessage = e => {
 	console.log("P1 Got A Message")
