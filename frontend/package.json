@@ -1,0 +1,16 @@
+{
+  "name": "RPSLS",
+  "version": "1.0.0",
+  "description": "Rock Paper Scissors Lizard Spock Game",
+  "main": "index.js",
+  "author": "Joshua Barratt",
+  "license": "MIT",
+  "private": false,
+  "dependencies": {
+    "@rollup/plugin-commonjs": "^11.0.2",
+    "@rollup/plugin-node-resolve": "^7.1.1",
+    "mini.css": "^3.0.1",
+    "rollup": "^1.32.0",
+    "rollup-plugin-terser": "^5.2.0"
+  }
+}
