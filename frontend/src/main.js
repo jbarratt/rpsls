@@ -3,6 +3,7 @@ function App() {
 
   _this.init = () => {
 
+    _this.handleEvents();
     const wsURL = 'wss://foamngcalc.execute-api.us-west-2.amazonaws.com/Prod'
     _this.ws = new WebSocket(wsURL)
 
@@ -18,7 +19,13 @@ function App() {
     }
 
     _this.updateUI = d => {
-      _this.status.innerHTML = JSON.stringify(d)
+      if ("roundSummary" in d) {
+        _this.statusElem.innerHTML = d.roundSummary
+        var li = document.createElement('li')
+        li.innerHTML = d.roundSummary + ` You: ${d.yourScore} Them: ${d.theirScore}`
+        _this.logElem.insertBefore(li, _this.logElem.firstChild)
+      }
+      _this.scoresElem.innerHTML = `You: ${d.yourScore} Them: ${d.theirScore}`
     }
 
     _this.ws.onopen = () => {
@@ -29,6 +36,10 @@ function App() {
           _this.ws.send(JSON.stringify({
             'action': 'new',
           }))
+        _this.statusElem.innerHTML = "Created a game. Share the link with a friend to play!"
+        var li = document.createElement('li')
+        li.innerHTML = "Created a Game"
+        _this.logElem.appendChild(li)
       } else {
         // cut the hash off
         _this.gameId = url.hash.substring(1)
@@ -37,11 +48,13 @@ function App() {
             'action': 'join',
             'gameId': _this.gameId,
           }))
+          _this.statusElem.innerHTML = "Joined Game! Make a play now."
+        var li = document.createElement('li')
+        li.innerHTML = "Joined a Game"
+        _this.logElem.appendChild(li)
       }
     }
 
-    _this.status = document.querySelector("#status")
-    _this.handleEvents();
   }
 
   _this.makePlay = e => {
@@ -53,8 +66,8 @@ function App() {
         'round': _this.roundId,
         'play': elem.id,
       }))
+    _this.statusElem.innerHTML = `You played ${elem.id}, waiting on other player ....`
   }
-
 
   _this.handleEvents = () => {
     console.log("setting up onclick events")
@@ -63,17 +76,26 @@ function App() {
     document.querySelector('#scissors').onclick = _this.makePlay
     document.querySelector('#lizard').onclick = _this.makePlay
     document.querySelector('#spock').onclick = _this.makePlay
+    document.querySelector('#copytoclipboard').onclick = copyURLToClipboard
+    _this.statusElem = document.querySelector('#status')
+    _this.scoresElem = document.querySelector('#scores')
+    _this.logElem = document.querySelector('#log')
   }
-
-
 }
 
-App.prototype.handleEvents = function() {
-  this.changeButton.onclick = this.changeFont;
-  this.downloadButton.onclick = this.downloadSVG;
-  this.printButton.onclick = this.printSVG;
-  this.textInput.onchange = this.textInput.onkeyup = this.renderCurrent;
-}
+// scores h1, status p, log p
+
+const copyURLToClipboard = () => {
+  const el = document.createElement('textarea');
+  el.value = document.location;
+  el.setAttribute('readonly', '');
+  el.style.position = 'absolute';
+  el.style.left = '-9999px';
+  document.body.appendChild(el);
+  el.select();
+  document.execCommand('copy');
+  document.body.removeChild(el);
+};
 
 var app = new App();
 window.addEventListener("load", function () { app.init() }, false);

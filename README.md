@@ -7,15 +7,19 @@ The same author's frontend post is probably worth looking at too. [RxJS and Redu
 
 ## TODO
 
-* javascript hello world (send a message from node)
-* FE hello world (send a message on click)
-* do integration test
+* make it visible when you click and add 'waiting for player'
+* show a log of previous rounds
+* extend player to have (uid, address)
+	* use uid for key and update address on change
 * See if lambda could be 128MB instead
-* Add google tracker to app
+* add limited retry to new game creation
 * Add TTLs to dynamo items (https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/howitworks-ttl.html)
 	* enable it on the table
 	* Identify a column
 	* add epoch timestamps to expirable items
+* fix dynamo table name and clear old one
+* Add short TTL CNAME to dynamo endpoint that's updated if it changes to make the webapp more stable
+* Add google tracker to app
 
 ## Rules
 
