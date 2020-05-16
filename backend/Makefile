@@ -1,6 +1,7 @@
 .PHONY: deps clean build
 export GO111MODULE=on
 export AWS_DEFAULT_REGION=us-west-2
+export AWS_REGION=us-west-2
 BINARY_NAME=handler
 BUCKET_NAME=serialized-sam-deploy
 
@@ -13,6 +14,9 @@ deps:
 
 clean: 
 	rm -rf ./code/handler
+
+dynamotest:
+	cd code/store/ && export TABLE_NAME=rpslp_connections && aws-vault exec serialized -- go test
 
 package:
 	aws-vault exec serialized -- sam package --template-file template.yaml --output-template-file packaged.yaml --s3-bucket $(BUCKET_NAME)

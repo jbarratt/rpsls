@@ -19,65 +19,61 @@ const (
 
 // Player stores relevant information about a current player's state
 type Player struct {
-	ID           string
-	Number       int
-	Play         string
-	Score        int
-	Game         string
+	// ID is the user-supplied user identifier
+	ID string
+	// Address is the connection id (or other location) for how to get to the player
+	// It may change over time for the same player, e.g. if they reconnect
+	Address string
+	// Play is the player's last move
+	Play string
+	// Round is the last round played by the player
+	Round int
+	// Score is the player's score
+	Score int
+	// Game is the GameID this player is associated with
+	Game string
+	// WonLastRound identifies if the player ... won the last round
 	WonLastRound bool
 }
 
 // Game is the key data for the overall game
 type Game struct {
-	ID           string
-	Round        int
-	PlayCount    int
-	Scores       []int
-	PlayerID     []string
-	Plays        []string
+	// ID is the identifier of the overall game
+	ID string
+	// Round tracks which round of the game is currently active
+	Round int
+	// PlayCount keeps track of how many plays have been submitted
+	PlayCount int
+	// Players is indexed by Player.ID and points to player records
+	Players map[string]*Player
+	// RoundSummary is a summary of the previous round ("Rock beats Scissors")
 	RoundSummary string
-	Winner       int
+	// Winner is the Player.ID which won the last round.
+	Winner string
 }
 
 // GameContext is a container for the overall game and the current player action in it
 type GameContext struct {
-	Game   *Game
-	Player *Player
+	Game *Game
+	// ID of the current player inside the game
+	ActingPlayer *Player
 }
 
 // AssignPlayer sets a player to be P1 or P2
-func (gc *GameContext) AssignPlayer() error {
-	for idx := 0; idx < NUM_PLAYERS; idx++ {
-		if gc.Game.PlayerID[idx] == "" {
-			gc.Game.PlayerID[idx] = gc.Player.ID
-			gc.Player.Number = idx + 1
-			err := gc.UpdatePlayer()
-			if err != nil {
-				return err
-			}
-			return nil
+func (gc *GameContext) AssignPlayer(p *Player) error {
+	_, found := gc.Game.Players[p.ID]
+	if found {
+		gc.ActingPlayer = gc.Game.Players[p.ID]
+		// update address in case it has changed
+		gc.ActingPlayer.Address = p.Address
+	} else {
+		if len(gc.Game.Players) < 2 {
+			gc.Game.Players[p.ID] = p
+			gc.ActingPlayer = p
+		} else {
+			return errors.New("unable to assign player, game is already full")
 		}
 	}
-	return errors.New("unable to assign player, game is already full")
-}
-
-// UpdatePlayer updates the player part of the context from the game state
-func (gc *GameContext) UpdatePlayer() error {
-	// Player needs to be assigned
-	if gc.Player.Number == 0 {
-		for idx := 0; idx < NUM_PLAYERS; idx++ {
-			if gc.Player.ID == gc.Game.PlayerID[idx] {
-				gc.Player.Number = idx + 1
-			}
-		}
-		if gc.Player.Number == 0 {
-			return errors.New("Player is not a member of the game")
-		}
-	}
-	gc.Player.Game = gc.Game.ID
-	gc.Player.Score = gc.Game.Scores[gc.Player.Number-1]
-	gc.Player.WonLastRound = (gc.Game.Winner == gc.Player.Number)
-	// gc.Player.Play = gc.Game.Plays[pidx]
 	return nil
 }
 
@@ -85,35 +81,35 @@ func (gc *GameContext) Play(play string) error {
 	if !ValidPlay(play) {
 		return errors.New("Invalid play " + play)
 	}
-	if gc.Player.Number < 1 || gc.Player.Number > NUM_PLAYERS {
-		return errors.New("Invalid Player Number")
+	gc.ActingPlayer.Play = play
+	if gc.ActingPlayer.Round < gc.Game.Round {
+		gc.Game.PlayCount++
 	}
-	gc.Player.Play = play
-	gc.Game.Plays[gc.Player.Number-1] = play
-	gc.Game.PlayCount++
+	// Update the round to indicate the player played for this round
+	gc.ActingPlayer.Round = gc.Game.Round
 	return nil
 }
 
 func NewGame() *Game {
 	id, _ := GenerateRandomString(GAMEID_LENGTH)
 	g := Game{
-		ID:       id,
-		Round:    1,
-		Scores:   make([]int, NUM_PLAYERS),
-		PlayerID: make([]string, NUM_PLAYERS),
-		Plays:    make([]string, NUM_PLAYERS),
+		ID:      id,
+		Round:   1,
+		Players: make(map[string]*Player),
 	}
 	return &g
 }
 
-func NewGameContext(playerID string, game *Game) *GameContext {
-	p := Player{ID: playerID}
+func NewGameContext(playerID, playerAddress string, game *Game) (*GameContext, error) {
 	gc := GameContext{
-		Game:   game,
-		Player: &p,
+		Game: game,
 	}
-	gc.UpdatePlayer()
-	return &gc
+	p := &Player{ID: playerID, Address: playerAddress, Game: game.ID}
+	err := gc.AssignPlayer(p)
+	if err != nil {
+		return nil, err
+	}
+	return &gc, nil
 }
 
 // AdvanceGame updates a game to resolve the winner, round, etc
@@ -123,21 +119,35 @@ func (g *Game) AdvanceGame() error {
 		return errors.New("Cannot advance game without all plays")
 	}
 
+	// This seems kind of annoying but this is the only place needing to compare players
+	players := make([]*Player, NUM_PLAYERS)
+	i := 0
+	for k := range g.Players {
+		// have to make a read only copy
+		players[i] = g.Players[k]
+		i++
+	}
+
 	// Check for a tie
-	if g.Plays[0] == g.Plays[1] {
-		g.Winner = 0
-		g.RoundSummary = fmt.Sprintf("Both played %s, tie", g.Plays[0])
+	if players[0].Play == players[1].Play {
+		g.Winner = "Tie"
+		g.RoundSummary = fmt.Sprintf("Both played %s, tie", players[0].Play)
 	} else {
-		beats, how := Beats(g.Plays[0], g.Plays[1])
+		beats, how := Beats(players[0].Play, players[1].Play)
 		if beats {
-			g.Winner = 1
-			g.RoundSummary = fmt.Sprintf("%s %s %s", g.Plays[0], how, g.Plays[1])
+			g.Winner = players[0].ID
+			players[0].Score++
+			players[0].WonLastRound = true
+			players[1].WonLastRound = false
+			g.RoundSummary = fmt.Sprintf("%s %s %s", players[0].Play, how, players[1].Play)
 		} else {
-			_, how = Beats(g.Plays[1], g.Plays[0])
-			g.Winner = 2
-			g.RoundSummary = fmt.Sprintf("%s %s %s", g.Plays[1], how, g.Plays[0])
+			_, how = Beats(players[1].Play, players[0].Play)
+			g.Winner = players[1].ID
+			players[1].Score++
+			players[1].WonLastRound = true
+			players[1].WonLastRound = false
+			g.RoundSummary = fmt.Sprintf("%s %s %s", players[1].Play, how, players[0].Play)
 		}
-		g.Scores[g.Winner-1]++
 	}
 
 	g.Round = g.Round + 1

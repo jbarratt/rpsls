@@ -17,19 +17,22 @@ type GameItem struct {
 	Type    string
 	Round   int
 	Plays   int
-	P1Play  string
-	P2Play  string
-	P1Score int
-	P2Score int
-	P1ID    string
-	P2ID    string
+	Players map[string]PlayerItem
 	GameID  string
+}
+
+type PlayerItem struct {
+	ID      string
+	Address string
+	Play    string
+	Round   int
+	Score   int
 }
 
 // GameStore interface declares the
 type GameStore interface {
 	Load(string) (*game.Game, error)
-	StoreNew(*game.Game) error
+	StoreAll(*game.Game) error
 	StoreRound(*game.Game) error
 	StorePlay(*game.GameContext) error
 	StorePlayer(*game.GameContext) error
@@ -51,7 +54,9 @@ func New(d *dynamodb.DynamoDB, tableName string) *Store {
 
 // Load returns a populated game based on a gameID, or error if no game exists
 func (s *Store) Load(gameID string) (*game.Game, error) {
+
 	gi := GameItem{}
+
 	input := &dynamodb.GetItemInput{
 		TableName: aws.String(s.tableName),
 		Key: map[string]*dynamodb.AttributeValue{
@@ -84,12 +89,25 @@ func UpdateGameFromItem(g *game.Game, gi *GameItem) {
 	g.ID = gi.GameID
 	g.Round = gi.Round
 	g.PlayCount = gi.Plays
-	g.Plays[0] = gi.P1Play
-	g.Plays[1] = gi.P2Play
-	g.PlayerID[0] = gi.P1ID
-	g.PlayerID[1] = gi.P2ID
-	g.Scores[0] = gi.P1Score
-	g.Scores[1] = gi.P2Score
+	for id, p := range gi.Players {
+		// Check to see if this game already has that player
+		gp, found := g.Players[id]
+		if found {
+			// need to update any player values
+			gp.Address = p.Address
+			gp.Play = p.Play
+			gp.Round = p.Round
+			gp.Score = p.Score
+		} else {
+			// Need to add a player for this game entry
+			g.Players[id] = &game.Player{
+				ID:      id,
+				Address: p.Address,
+				Round:   p.Round,
+				Score:   p.Score,
+				Play:    p.Play}
+		}
+	}
 }
 
 // UpdateItemFromGame updates a dynamo game item from the game struct
@@ -97,18 +115,35 @@ func UpdateItemFromGame(gi *GameItem, g *game.Game) {
 	gi.GameID = g.ID
 	gi.Round = g.Round
 	gi.Plays = g.PlayCount
-	gi.P1Play = g.Plays[0]
-	gi.P2Play = g.Plays[1]
-	gi.P1ID = g.PlayerID[0]
-	gi.P2ID = g.PlayerID[1]
-	gi.P1Score = g.Scores[0]
-	gi.P2Score = g.Scores[1]
+	for id, gp := range g.Players {
+		// Check to see if this GameItem already has that player
+		gip, found := gi.Players[id]
+		if found {
+			// need to update any player values
+			gip.Address = gp.Address
+			gip.Play = gp.Play
+			gip.Round = gp.Round
+			gip.Score = gp.Score
+		} else {
+			// Need to add a player for this game entry
+			gi.Players[id] = PlayerItem{
+				ID:      id,
+				Address: gp.Address,
+				Round:   gp.Round,
+				Play:    gp.Play,
+				Score:   gp.Score,
+			}
+		}
+	}
 }
 
-// StoreNew takes a Game and creates a new record for it
-func (s *Store) StoreNew(g *game.Game) error {
+// StoreAll takes a Game and persists the entire thing
+// Useful when creating a new game or large operations like round updates
+func (s *Store) StoreAll(g *game.Game) error {
 
 	gi := &GameItem{}
+	gi.Players = make(map[string]PlayerItem)
+
 	UpdateItemFromGame(gi, g)
 
 	gi.PK = fmt.Sprintf("GAME#%s", g.ID)
@@ -142,7 +177,7 @@ func (s *Store) StorePlay(gc *game.GameContext) error {
 	input := &dynamodb.UpdateItemInput{
 		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
 			":play": {
-				S: aws.String(gc.Player.Play),
+				S: aws.String(gc.ActingPlayer.Play),
 			},
 			":count": {
 				N: aws.String("1"),
@@ -152,8 +187,8 @@ func (s *Store) StorePlay(gc *game.GameContext) error {
 			},
 		},
 		ExpressionAttributeNames: map[string]*string{
-			"#pxplay": aws.String(fmt.Sprintf("P%dPlay", gc.Player.Number)),
-			"#round":  aws.String("Round"),
+			"#pxid":  aws.String(gc.ActingPlayer.ID),
+			"#round": aws.String("Round"),
 		},
 		TableName: aws.String(s.tableName),
 		Key: map[string]*dynamodb.AttributeValue{
@@ -164,8 +199,8 @@ func (s *Store) StorePlay(gc *game.GameContext) error {
 				S: aws.String(fmt.Sprintf("GAME#%s", gc.Game.ID)),
 			},
 		},
-		ConditionExpression: aws.String(fmt.Sprintf("#round = :round")),
-		UpdateExpression:    aws.String(fmt.Sprintf("SET Plays = Plays + :count, #pxplay = :play")),
+		ConditionExpression: aws.String(fmt.Sprintf("#round = :round and Players.#pxid.Round < :round")),
+		UpdateExpression:    aws.String(fmt.Sprintf("SET Plays = Plays + :count, Players.#pxid.Play = :play, Players.#pxid.Round = :round")),
 		ReturnValues:        aws.String("ALL_NEW"),
 	}
 
@@ -190,14 +225,26 @@ func (s *Store) StorePlay(gc *game.GameContext) error {
 
 // StorePlayer takes a GameContext and stores the bits needed for an added player
 func (s *Store) StorePlayer(gc *game.GameContext) error {
+
+	gi := &GameItem{}
+	gi.Players = make(map[string]PlayerItem)
+	UpdateItemFromGame(gi, gc.Game)
+
+	pv, err := dynamodbattribute.MarshalMap(gi.Players[gc.ActingPlayer.ID])
+	if err != nil {
+		fmt.Printf("Unable to marshal player object: %s", err)
+		return err
+	}
+
 	input := &dynamodb.UpdateItemInput{
 		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
-			":id": {
-				S: aws.String(gc.Player.ID),
+			":player": {
+				M: pv,
 			},
 		},
 		ExpressionAttributeNames: map[string]*string{
-			"#pxid": aws.String(fmt.Sprintf("P%dID", gc.Player.Number)),
+			"#pxid":    aws.String(gc.ActingPlayer.ID),
+			"#players": aws.String("Players"),
 		},
 		TableName: aws.String(s.tableName),
 		Key: map[string]*dynamodb.AttributeValue{
@@ -208,12 +255,12 @@ func (s *Store) StorePlayer(gc *game.GameContext) error {
 				S: aws.String(fmt.Sprintf("GAME#%s", gc.Game.ID)),
 			},
 		},
-		UpdateExpression: aws.String(fmt.Sprintf("SET #pxid = :id")),
+		UpdateExpression: aws.String(fmt.Sprintf("SET #players.#pxid = :player")),
 	}
 
-	_, err := s.d.UpdateItem(input)
+	_, err = s.d.UpdateItem(input)
 	if err != nil {
-		fmt.Printf("got an error storing the player's ID\n")
+		fmt.Printf("got an error storing the player's ID: %+v\n", input)
 		fmt.Println(err.Error())
 		return err
 	}
@@ -221,53 +268,15 @@ func (s *Store) StorePlayer(gc *game.GameContext) error {
 }
 
 // StoreRound takes a Game and stores the next round
+// For now takes a tiny risk of a race condition updating non-essential data, by uploading the whole
+// item. (e.g. could blow out another player's connection if it changed at the exact wrong time.)
 func (s *Store) StoreRound(g *game.Game) error {
 
-	updateExpr := "SET P1Score = :p1score, P2Score = :p2score, Round = :round, Plays = :zero"
-
-	input := &dynamodb.UpdateItemInput{
-		TableName: aws.String(s.tableName),
-		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
-			":zero": {
-				N: aws.String("0"),
-			},
-			":round": {
-				N: aws.String(fmt.Sprintf("%d", g.Round)),
-			},
-			":p1score": {
-				N: aws.String(fmt.Sprintf("%d", g.Scores[0])),
-			},
-			":p2score": {
-				N: aws.String(fmt.Sprintf("%d", g.Scores[1])),
-			},
-		},
-		Key: map[string]*dynamodb.AttributeValue{
-			"PK": {
-				S: aws.String(fmt.Sprintf("GAME#%s", g.ID)),
-			},
-			"SK": {
-				S: aws.String(fmt.Sprintf("GAME#%s", g.ID)),
-			},
-		},
-		ReturnValues:     aws.String("ALL_NEW"),
-		UpdateExpression: aws.String(updateExpr),
-	}
-
-	result, err := s.d.UpdateItem(input)
+	// given that the whole record is being stored, this method works
+	err := s.StoreAll(g)
 	if err != nil {
-		fmt.Printf("got an error storing the completed round in dynamo\n")
-		fmt.Println(err.Error())
+		fmt.Printf("Got an error when trying to store a completed round: %s", err)
 		return err
 	}
-
-	item := GameItem{}
-	err = dynamodbattribute.UnmarshalMap(result.Attributes, &item)
-	if err != nil {
-		fmt.Println("unmarshal error: unable to retrieve game values")
-		fmt.Printf(err.Error())
-		return err
-	}
-	UpdateGameFromItem(g, &item)
-
 	return nil
 }
