@@ -15,6 +15,7 @@ type GameState struct {
 // PlayerMessage are what we get from the players
 type PlayerMessage struct {
 	Action string `json:"action"`
+	UID    string `json:"userId"`
 	GameID string `json:"gameId"`
 	Play   string `json:"play"`
 	Round  int    `json:"round"`

@@ -61,7 +61,7 @@ func (s *LambdaSvc) Default(e events.APIGatewayWebsocketProxyRequest) (interface
 			}, nil
 		}
 	case "new":
-		err := s.NewGame(e.RequestContext.ConnectionID)
+		err := s.NewGame(e.RequestContext.ConnectionID, message)
 		if err != nil {
 			log.Println("Unable to create new game", err.Error())
 			return events.APIGatewayProxyResponse{
@@ -98,11 +98,11 @@ func (s *LambdaSvc) Play(connectionID string, message PlayerMessage) error {
 		fmt.Printf("Unable to load game: %s\n", err)
 		return err
 	}
-	gc := game.NewGameContext(connectionID, g)
+	gc, err := game.NewGameContext(message.UID, connectionID, g)
 
 	// set this equal to the round from the user
 	// so plays will be rejected if too old.
-	gc.Game.Round = message.Round
+	gc.ActingPlayer.Round = message.Round
 
 	err = gc.Play(message.Play)
 	if err != nil {
@@ -128,92 +128,107 @@ func (s *LambdaSvc) Play(connectionID string, message PlayerMessage) error {
 	}
 
 	// the round advanced, time to notify all the players
-	s.NotifyPlayers(gc.Game)
+	s.NotifyPlayers(gc)
 	return nil
 }
 
+func otherPlayer(gc *game.GameContext) (*game.Player, error) {
+	var them *game.Player
+	for id, player := range gc.Game.Players {
+		if gc.ActingPlayer.ID != id {
+			them = player
+		}
+	}
+
+	if them == nil {
+		return nil, errors.New("Unable to find second player when messaging round completion")
+	}
+	return them, nil
+}
+
 // NotifyPlayers sends out a notification about a game round to all connected parties
-func (s *LambdaSvc) NotifyPlayers(g *game.Game) error {
+func (s *LambdaSvc) NotifyPlayers(gc *game.GameContext) error {
 
-	states := make([]GameState, 2)
-	states[0] = GameState{
-		Round:      g.Round,
-		GameID:     g.ID,
-		YourScore:  g.Scores[0],
-		TheirScore: g.Scores[1],
-		YourPlay:   g.Plays[0],
-		TheirPlay:  g.Plays[1],
-	}
-	states[1] = GameState{
-		Round:      g.Round,
-		GameID:     g.ID,
-		YourScore:  g.Scores[1],
-		TheirScore: g.Scores[0],
-		YourPlay:   g.Plays[1],
-		TheirPlay:  g.Plays[0],
+	you := gc.ActingPlayer
+	them, err := otherPlayer(gc)
+	if err != nil {
+		return err
 	}
 
-	switch g.Winner {
-	case 0:
-		states[0].Winner = false
-		states[1].Winner = false
-		states[0].RoundSummary = "Tie Game"
-		states[1].RoundSummary = "Tie Game"
-	case 1:
-		states[0].Winner = true
-		states[1].Winner = false
-		states[0].RoundSummary = g.RoundSummary
-		states[1].RoundSummary = g.RoundSummary
-	case 2:
-		states[0].Winner = false
-		states[1].Winner = true
-		states[0].RoundSummary = g.RoundSummary
-		states[1].RoundSummary = g.RoundSummary
+	youState := GameState{
+		Round:      gc.Game.Round,
+		GameID:     gc.Game.ID,
+		YourScore:  you.Score,
+		TheirScore: them.Score,
+		YourPlay:   you.Play,
+		TheirPlay:  them.Play,
+	}
+	themState := GameState{
+		Round:      gc.Game.Round,
+		GameID:     gc.Game.ID,
+		YourScore:  them.Score,
+		TheirScore: you.Score,
+		YourPlay:   them.Play,
+		TheirPlay:  you.Play,
+	}
+
+	switch gc.Game.Winner {
+	case "Tie":
+		youState.Winner = false
+		themState.Winner = false
+		youState.RoundSummary = "Tie Game"
+		themState.RoundSummary = "Tie Game"
+	case you.ID:
+		youState.Winner = true
+		themState.Winner = false
+		youState.RoundSummary = gc.Game.RoundSummary
+		themState.RoundSummary = gc.Game.RoundSummary
+	case them.ID:
+		youState.Winner = false
+		themState.Winner = true
+		youState.RoundSummary = gc.Game.RoundSummary
+		themState.RoundSummary = gc.Game.RoundSummary
 	default:
 		return errors.New("Unusable winner value")
 	}
 
-	for i := 0; i < 2; i++ {
-		b, err := json.Marshal(states[i])
-		if err != nil {
-			return err
-		}
-		err = s.ws.Send(g.PlayerID[i], b)
-		if err != nil {
-			fmt.Sprintf("Error sending to player %d: %s\n", i+1, err)
-		}
+	s.SendStateMessage(&youState, you.Address)
+	s.SendStateMessage(&themState, them.Address)
+	return nil
+}
+
+func (s *LambdaSvc) SendStateMessage(gs *GameState, address string) error {
+	b, err := json.Marshal(gs)
+	if err != nil {
+		return err
+	}
+	err = s.ws.Send(address, b)
+	if err != nil {
+		// TODO maybe handle a disconnection event here
+		fmt.Printf("Error sending to player %s\n", err)
 	}
 	return nil
 }
 
 // SendGameState will send a game state to a given connection
 func (s *LambdaSvc) SendGameState(gc *game.GameContext) error {
-	you := gc.Player.Number - 1
-	other := 0
-	if you == 0 {
-		other = 1
-	}
-	if you == -1 {
-		fmt.Println("player was not assigned to the game")
-		return errors.New("player was not a member of the game")
+
+	you := gc.ActingPlayer
+	them, err := otherPlayer(gc)
+	if err != nil {
+		return err
 	}
 
 	state := GameState{
 		Round:      gc.Game.Round,
 		GameID:     gc.Game.ID,
-		YourScore:  gc.Game.Scores[you],
-		TheirScore: gc.Game.Scores[other],
-		YourPlay:   gc.Game.Plays[you],
-		TheirPlay:  gc.Game.Plays[other],
+		YourScore:  you.Score,
+		TheirScore: them.Score,
+		YourPlay:   you.Play,
+		TheirPlay:  them.Play,
 	}
-	b, err := json.Marshal(state)
-	if err != nil {
-		return err
-	}
-	err = s.ws.Send(gc.Player.ID, b)
-	if err != nil {
-		return err
-	}
+
+	s.SendStateMessage(&state, you.Address)
 	return nil
 }
 
@@ -221,8 +236,7 @@ func (s *LambdaSvc) SendGameState(gc *game.GameContext) error {
 func (s *LambdaSvc) JoinGame(connectionID string, message PlayerMessage) error {
 
 	g, err := s.store.Load(message.GameID)
-	gc := game.NewGameContext(connectionID, g)
-	gc.AssignPlayer()
+	gc, err := game.NewGameContext(message.UID, connectionID, g)
 
 	err = s.store.StorePlayer(gc)
 	if err != nil {
@@ -238,12 +252,11 @@ func (s *LambdaSvc) JoinGame(connectionID string, message PlayerMessage) error {
 }
 
 // NewGame creates a new game record in the database
-func (s *LambdaSvc) NewGame(connectionID string) error {
+func (s *LambdaSvc) NewGame(connectionID string, message PlayerMessage) error {
 	g := game.NewGame()
-	gc := game.NewGameContext(connectionID, g)
-	gc.AssignPlayer()
+	gc, err := game.NewGameContext(message.UID, connectionID, g)
 
-	err := s.store.StoreNew(g)
+	err = s.store.StoreAll(g)
 	if err != nil {
 		fmt.Printf("unable to store game: %s %+v", err, g)
 		return err
