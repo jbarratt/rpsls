@@ -7,6 +7,13 @@ function App() {
     const wsURL = 'wss://foamngcalc.execute-api.us-west-2.amazonaws.com/Prod'
     _this.ws = new WebSocket(wsURL)
 
+    // persist a user id to use across connections
+    _this.userId = localStorage.getItem("rockpaper-userid");
+    if(_this.userId == null) {
+      _this.userId = Math.random().toString(36).substr(2, 17);
+      localStorage.setItem("rockpaper-userid", _this.userId);
+    }
+
     _this.ws.onmessage = e => {
         d = JSON.parse(e.data)
         console.log(d)
@@ -35,6 +42,7 @@ function App() {
         // no game is created yet
           _this.ws.send(JSON.stringify({
             'action': 'new',
+            'userId': _this.userId,
           }))
         _this.statusElem.innerHTML = "Created a game. Share the link with a friend to play!"
         var li = document.createElement('li')
@@ -46,6 +54,7 @@ function App() {
         console.log("attempting to connect to " + _this.gameId)
           _this.ws.send(JSON.stringify({
             'action': 'join',
+            'userId': _this.userId,
             'gameId': _this.gameId,
           }))
           _this.statusElem.innerHTML = "Joined Game! Make a play now."
@@ -63,6 +72,7 @@ function App() {
       _this.ws.send(JSON.stringify({
         'action': 'play',
         'gameId': _this.gameId,
+        'userId': _this.userId,
         'round': _this.roundId,
         'play': elem.id,
       }))
