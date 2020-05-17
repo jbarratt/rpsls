@@ -152,6 +152,7 @@ func (s *LambdaSvc) NotifyPlayers(gc *game.GameContext) error {
 	you := gc.ActingPlayer
 	them, err := otherPlayer(gc)
 	if err != nil {
+		fmt.Printf("Unable to find other player, critical.")
 		return err
 	}
 
@@ -216,7 +217,8 @@ func (s *LambdaSvc) SendGameState(gc *game.GameContext) error {
 	you := gc.ActingPlayer
 	them, err := otherPlayer(gc)
 	if err != nil {
-		return err
+		fmt.Printf("unable to find other player, but this may be new game")
+		them = &game.Player{}
 	}
 
 	state := GameState{

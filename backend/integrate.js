@@ -19,7 +19,8 @@ p1.onerror = error => {
 
 p1.onopen = () => {
   p1.send(JSON.stringify({
-	  'action': 'new'
+	  'action': 'new',
+	  'userId': 'playerone',
   }))
 }
 
@@ -38,6 +39,7 @@ setTimeout(() => {
 	console.log("P2 Joining Game" + gameId)
 	p2.send(JSON.stringify({
 	  'gameId': gameId,
+	  'userId': "playertwo",
 	  'action': 'join',
 	}))
 }, 2000);
@@ -46,12 +48,14 @@ setTimeout(() => {
 	console.log("making plays")
 	p1.send(JSON.stringify({
 	  'gameId': gameId,
+	  'userId': "playerone",
 	  'action': 'play',
 	  'round': roundId,
 	  'play': 'spock',
 	}))
 	p2.send(JSON.stringify({
 	  'gameId': gameId,
+	  'userId': "playertwo",
 	  'action': 'play',
 	  'round': roundId,
 	  'play': 'lizard',
@@ -63,12 +67,14 @@ setTimeout(() => {
 	console.log("making plays")
 	p1.send(JSON.stringify({
 	  'gameId': gameId,
+	  'userId': "playerone",
 	  'action': 'play',
 	  'round': roundId,
 	  'play': 'lizard',
 	}))
 	p2.send(JSON.stringify({
 	  'gameId': gameId,
+	  'userId': "playertwo",
 	  'action': 'play',
 	  'round': roundId,
 	  'play': 'spock',
