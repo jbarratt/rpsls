@@ -3,61 +3,66 @@
 <html lang="en">
 	<head>
 		<meta charset="utf-8">
-		<title>Rock, Paper, Scissors, Lizard, Spock</title>
-		<link rel="stylesheet" type="text/css" href="mini-nord.css" />
+	  <meta name="description" content="Online version of Rock, Paper, Scissors, Lizard, Spock">
+	  <meta name="viewport" content="width=device-width, initial-scale=1">
+		<title>Rock, Paper, Scissors, Lizard, Spock Online</title>
+		<link rel="stylesheet" type="text/css" href="paper.min.css" />
 		<link rel="stylesheet" type="text/css" href="style.css" />
 		<script src="bundle.js" type="text/javascript"></script>
 	</head>
 
 	<body>
-		<div class="container">
-			<div class="row">
-				<div class="col-sm"><h1 id="scores"></h1></code></div>
+		<nav class="border split-nav">
+			<div class="nav-brand">
+				<h3>RPSLS Online</h3>
 			</div>
-			<div class="row">
-				<div class="col-sm"><p id="status"></code></div>
-			</div>
-			<div class="row">
-				<div class="col-sm">
-					<button class="large primary" id="rock">
-						<p>🗿 Rock</p>
-						<small>Crushes 🦎 and ✂️ </small></button>
-					</button>
-					<button class="large primary" id="paper">
-						<p>📄 Paper</p>
-						<small>Covers 🗿 and disproves 🖖</small></button>
-					</button>
-					<button class="large primary" id="scissors">
-						<p>✂️  Scissors</p>
-						<small>Cuts 📄, Decapitates 🦎</small></button>
-					</button>
-					<button class="large primary" id="lizard">
-						<p>🦎 Lizard</p>
-						<small>Poisons 🖖, Eats 📄</small></button>
-					</button>
-					<button class="large primary" id="spock">
-						<p>🖖 Spock</p>
-						<small>Beams Up ✂️ , Sits on 🗿</small></button>
-					</button>
-				</div>
-			</div>
-			<div class="row">
-				<div class="col-sm">
-					<ul id="log">
+			<div class="collapsible">
+				<input id="collapsible1" type="checkbox" name="collapsible1">
+				<button>
+				<label for="collapsible1">
+					<div class="bar1"></div>
+					<div class="bar2"></div>
+					<div class="bar3"></div>
+				  </label>
+				</button>
+				<div class="collapsible-body">
+					<ul class="inline">
+						<li><a href="#" id="copytoclipboard">Copy Link</a></li>
+						<li><a href="http://www.samkass.com/theories/RPSSL.html">Rules</a></li>
 					</ul>
 				</div>
 			</div>
-			<div class="row">
-				<div class="col-sm">
-					<button class="primary" id="copytoclipboard">
-						<p>📋 Copy Link</p>
-						<small>Share it to your opponent!</small></button>
-					</button>
+		</nav>
+		<div class="row">
+		<div class="card">
+			<div class="card-body">
+				<div class="row flex-edges">
+					<p id="youscore">You: 0</p>
+					<p id="themscore">Them: 0</p>
 				</div>
-				<div class="col-sm">
-					<a href="http://www.samkass.com/theories/RPSSL.html">About the Game</a>
+				<div class="row playrow">
+					<div id="youplay" class="col-6 col playcol">
+						<img src="loading.gif">
+					</div>
+					<div id="themplay" class="col-6 col playcol">
+						<img src="loading.gif">
+					</div>
+				</div>
+				<div class="row flex-center">
+					<span id="status"></span>
+				</div>
+			</div>
+			<div class="card-footer">
+				<div class="row flex-spaces">
+				<button type="button" id="rock">Rock</button>
+				<button type="button" id="paper">Paper</button>
+				<button type="button" id="scissors">Scissors</button>
+				<button type="button" id="lizard">Lizard</button>
+				<button type="button" id="spock">Spock</button>
 				</div>
 			</div>
 		</div>
+		</div>
 	</body>
+
 </html>

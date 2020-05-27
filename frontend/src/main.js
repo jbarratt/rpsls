@@ -7,6 +7,8 @@ function App() {
     const wsURL = 'wss://foamngcalc.execute-api.us-west-2.amazonaws.com/Prod'
     _this.ws = new WebSocket(wsURL)
 
+    _this.played = false;
+
     // persist a user id to use across connections
     _this.userId = localStorage.getItem("rockpaper-userid");
     if(_this.userId == null) {
@@ -28,11 +30,19 @@ function App() {
     _this.updateUI = d => {
       if ("roundSummary" in d) {
         _this.statusElem.innerHTML = d.roundSummary
-        var li = document.createElement('li')
-        li.innerHTML = d.roundSummary + ` You: ${d.yourScore} Them: ${d.theirScore}`
-        _this.logElem.insertBefore(li, _this.logElem.firstChild)
+         setPlayImg(_this.youPlayElem, `${d.yourPlay}.png`, true)
+         setPlayImg(_this.themPlayElem, `${d.theirPlay}.png`, false)
+        if(d.winner) {
+          _this.youPlayElem.style.backgroundColor = "lightgreen"
+          _this.themPlayElem.style.backgroundColor = "palevioletred"
+        } else if(d.yourPlay != d.theirPlay) {
+          _this.themPlayElem.style.backgroundColor = "lightgreen"
+          _this.youPlayElem.style.backgroundColor = "palevioletred"
+        }
+        _this.played = false;
       }
-      _this.scoresElem.innerHTML = `You: ${d.yourScore} Them: ${d.theirScore}`
+      _this.youScoreElem.innerHTML = `You: ${d.yourScore}`
+      _this.themScoreElem.innerHTML = `Them: ${d.theirScore}`
     }
 
     _this.ws.onopen = () => {
@@ -45,9 +55,6 @@ function App() {
             'userId': _this.userId,
           }))
         _this.statusElem.innerHTML = "Created a game. Share the link with a friend to play!"
-        var li = document.createElement('li')
-        li.innerHTML = "Created a Game"
-        _this.logElem.appendChild(li)
       } else {
         // cut the hash off
         _this.gameId = url.hash.substring(1)
@@ -58,9 +65,6 @@ function App() {
             'gameId': _this.gameId,
           }))
           _this.statusElem.innerHTML = "Joined Game! Make a play now."
-        var li = document.createElement('li')
-        li.innerHTML = "Joined a Game"
-        _this.logElem.appendChild(li)
       }
     }
 
@@ -68,6 +72,10 @@ function App() {
 
   _this.makePlay = e => {
     var elem = e.target.closest("button")
+    if (_this.played) {
+      console.log("ignoring second play attempt")
+      return
+    }
     console.log("got a play event for " + elem + " named " + elem.id)
       _this.ws.send(JSON.stringify({
         'action': 'play',
@@ -77,6 +85,11 @@ function App() {
         'play': elem.id,
       }))
     _this.statusElem.innerHTML = `You played ${elem.id}, waiting on other player ....`
+    _this.played = true
+    _this.themPlayElem.style.backgroundColor = ""
+    _this.youPlayElem.style.backgroundColor = ""
+    setPlayImg(_this.themPlayElem, "loading.gif", true)
+    setPlayImg(_this.youPlayElem, `${elem.id}.png`, true)
   }
 
   _this.handleEvents = () => {
@@ -88,8 +101,23 @@ function App() {
     document.querySelector('#spock').onclick = _this.makePlay
     document.querySelector('#copytoclipboard').onclick = copyURLToClipboard
     _this.statusElem = document.querySelector('#status')
-    _this.scoresElem = document.querySelector('#scores')
-    _this.logElem = document.querySelector('#log')
+    _this.youScoreElem = document.querySelector('#youscore')
+    _this.themScoreElem = document.querySelector('#themscore')
+    _this.youPlayElem = document.querySelector("#youplay")
+    _this.themPlayElem = document.querySelector("#themplay")
+  }
+}
+
+const setPlayImg = (element, url, reverse) => {
+  var img = document.createElement("img")
+  img.src = url
+  if (reverse) {
+    img.style.transform = "scaleX(-1)";
+  }
+  if(element.firstElementChild == null) {
+    element.appendChild(img)
+  } else {
+    element.replaceChild(img, element.firstElementChild)
   }
 }
 
