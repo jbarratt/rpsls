@@ -20,7 +20,7 @@ type GameItem struct {
 	Plays   int
 	Players map[string]PlayerItem
 	GameID  string
-	Expires int
+	Expires int64
 }
 
 type PlayerItem struct {
@@ -29,7 +29,6 @@ type PlayerItem struct {
 	Play    string
 	Round   int
 	Score   int
-	Expires int
 }
 
 // GameStore interface declares the
@@ -154,7 +153,7 @@ func (s *Store) StoreAll(g *game.Game) error {
 	gi.Type = "GameItem"
 	// Set the TTL on creation and on every round
 	// Does not need to be updated during other gameplay
-	gi.Expires = time.Now().Unix() + 2, 592, 000 // TTL: expire in 30 days
+	gi.Expires = time.Now().Unix() + 2_592_000 // TTL: expire in 30 days
 
 	av, err := dynamodbattribute.MarshalMap(gi)
 	if err != nil {
