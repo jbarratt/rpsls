@@ -9,6 +9,14 @@ body, button, p, h1, h2, h3, li, small {
 	font-family: 'Rock Salt', cursive;
 }
 
+img {
+	margin-left: auto;
+	margin-right: auto;
+}
+
+.gameboard {
+	width: 100%;
+}
 
 .playrow div {
 	padding: 0em;
