@@ -5,6 +5,12 @@ This [medium post](https://medium.com/@techinscribed/authenticated-serverless-we
 
 The same author's frontend post is probably worth looking at too. [RxJS and Redux Observables](https://techinscribed.com/websocket-connection-reconnection-rxjs-redux-observable/?utm_source=medium&utm_medium=Referral&utm_campaign=guest_blogging)
 
+Font options:
+
+* VT323: https://fonts.google.com/specimen/VT323
+* Arvo: https://fonts.google.com/specimen/Arvo
+* Rock Salt: https://fonts.google.com/specimen/Rock+Salt
+
 ## TODO
 
 * make it visible when you click and add 'waiting for player'
