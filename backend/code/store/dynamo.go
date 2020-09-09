@@ -3,6 +3,7 @@ package store
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
@@ -19,6 +20,7 @@ type GameItem struct {
 	Plays   int
 	Players map[string]PlayerItem
 	GameID  string
+	Expires int
 }
 
 type PlayerItem struct {
@@ -27,6 +29,7 @@ type PlayerItem struct {
 	Play    string
 	Round   int
 	Score   int
+	Expires int
 }
 
 // GameStore interface declares the
@@ -149,6 +152,9 @@ func (s *Store) StoreAll(g *game.Game) error {
 	gi.PK = fmt.Sprintf("GAME#%s", g.ID)
 	gi.SK = fmt.Sprintf("GAME#%s", g.ID)
 	gi.Type = "GameItem"
+	// Set the TTL on creation and on every round
+	// Does not need to be updated during other gameplay
+	gi.Expires = time.Now().Unix() + 2, 592, 000 // TTL: expire in 30 days
 
 	av, err := dynamodbattribute.MarshalMap(gi)
 	if err != nil {

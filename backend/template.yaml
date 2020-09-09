@@ -115,12 +115,15 @@ Resources:
       SSESpecification:
         SSEEnabled: True
       TableName: !Ref TableName
+      TimeToLiveSpecification:
+        AttributeName: "Expires"
+        Enabled: True
   RPSLPFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: code/
       Handler: handler
-      MemorySize: 256
+      MemorySize: 128 
       Runtime: go1.x
       Environment:
         Variables:
