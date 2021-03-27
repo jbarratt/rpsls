@@ -220,6 +220,6 @@ func init() {
 		"lizard:paper":    "eats",
 		"lizard:spock":    "poisons",
 		"spock:scissors":  "beams up",
-		"spock:rock":      "sits on",
+		"spock:rock":      "vaporizes",
 	}
 }
